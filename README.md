@@ -7,9 +7,32 @@ It uses:
 - A Rust native messaging host to call `xdg-open <url>` (Linux) or `open <url>` (macOS)
 - Configurable URL patterns (regex) to control which links are intercepted
 
-## Install
+## Quick Install
 
-### 1. Load the extension
+Run the one-liner — it downloads everything and walks you through setup:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iltumio/cloe/main/scripts/install-all.sh | bash
+```
+
+Or install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iltumio/cloe/main/scripts/install-all.sh | bash -s -- v0.1.0
+```
+
+The script will:
+1. Download the native host binary (auto-detects OS and architecture)
+2. Download and unpack the extension to `~/.local/share/cloe/extension`
+3. Prompt you to load the extension in Chromium and paste the extension ID
+4. Register the native messaging host
+
+### Manual install
+
+<details>
+<summary>Click to expand step-by-step instructions</summary>
+
+#### 1. Load the extension
 
 - Download `cloe-extension.zip` from the [latest release](https://github.com/iltumio/cloe/releases/latest) and unzip it
 - Open `chrome://extensions`
@@ -17,7 +40,7 @@ It uses:
 - Click **Load unpacked** and select the unzipped folder
 - Copy the extension ID
 
-### 2. Install the native host
+#### 2. Install the native host
 
 Run the install script (replace `<extension_id>` with your ID from step 1):
 
@@ -33,7 +56,9 @@ curl -fsSL https://raw.githubusercontent.com/iltumio/cloe/main/scripts/install.s
 
 The script auto-detects your OS and architecture (Linux/macOS, x86_64/aarch64), downloads the correct binary, and registers the native messaging host.
 
-### 3. Restart Chromium and relaunch your PWA windows.
+#### 3. Restart Chromium and relaunch your PWA windows.
+
+</details>
 
 ## Building from source
 
@@ -70,7 +95,8 @@ If no patterns are configured and "Intercept all" is off, no links are intercept
 
 - `extension/` — Chromium extension (MV3)
 - `native-host/` — Rust native messaging host
-- `scripts/install.sh` — Download + install from GitHub Releases
+- `scripts/install-all.sh` — One-line installer (extension + native host)
+- `scripts/install.sh` — Download + install native host only (requires extension ID)
 - `scripts/install-native-host.sh` — Build from source + install
 
 ## Notes
