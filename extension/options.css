@@ -216,3 +216,79 @@ h1 {
 #patterns-section.disabled .add-row button {
   cursor: not-allowed;
 }
+
+
+/* ── Debug mode ─────────────────────────────────────────────── */
+
+.debug-row {
+  margin-top: 4px;
+}
+
+.debug-row .hint {
+  font-size: 0.8rem;
+  color: #888;
+  font-weight: 400;
+}
+
+/* ── Native host status ──────────────────────────────────────── */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.status-bar .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-bar.checking {
+  background: #f0f4fa;
+  color: #555;
+}
+
+.status-bar.checking .status-dot {
+  background: #a0b4cc;
+}
+
+.status-bar.ok {
+  background: #edf7ed;
+  color: #1e4620;
+}
+
+.status-bar.ok .status-dot {
+  background: #2e7d32;
+}
+
+.status-bar.error {
+  background: #fdecea;
+  color: #611a15;
+}
+
+.status-bar.error .status-dot {
+  background: #c0392b;
+}
+
+.recheck-btn {
+  margin-left: auto;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.recheck-btn:hover {
+  opacity: 1;
+}

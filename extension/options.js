@@ -1,5 +1,6 @@
 const STORAGE_KEY = "urlPatterns";
 const INTERCEPT_ALL_KEY = "interceptAll";
+const DEBUG_KEY = "debugMode";
 
 const interceptAllCheckbox = document.getElementById("intercept-all");
 const patternsSection = document.getElementById("patterns-section");
@@ -10,6 +11,10 @@ const patternList = document.getElementById("pattern-list");
 const emptyState = document.getElementById("empty-state");
 const presetSelect = document.getElementById("preset-select");
 const presetAddBtn = document.getElementById("preset-add-btn");
+const debugCheckbox = document.getElementById("debug-mode");
+const nativeStatus = document.getElementById("native-status");
+const nativeStatusText = document.getElementById("native-status-text");
+const nativeRecheckBtn = document.getElementById("native-recheck");
 
 // ── Presets ─────────────────────────────────────────────────────
 
@@ -64,6 +69,15 @@ async function saveInterceptAll(value) {
   await chrome.storage.sync.set({ [INTERCEPT_ALL_KEY]: value });
 }
 
+async function loadDebugMode() {
+  const data = await chrome.storage.sync.get({ [DEBUG_KEY]: false });
+  return data[DEBUG_KEY] === true;
+}
+
+async function saveDebugMode(value) {
+  await chrome.storage.sync.set({ [DEBUG_KEY]: value });
+}
+
 // ── Toggle ─────────────────────────────────────────────────────
 
 function applyInterceptAllState(enabled) {
@@ -88,6 +102,10 @@ async function toggleInterceptAll() {
   const enabled = interceptAllCheckbox.checked;
   await saveInterceptAll(enabled);
   applyInterceptAllState(enabled);
+}
+
+async function toggleDebugMode() {
+  await saveDebugMode(debugCheckbox.checked);
 }
 
 // ── Rendering ──────────────────────────────────────────────────
@@ -185,9 +203,36 @@ async function removePattern(index) {
   renderPatterns(patterns);
 }
 
+// ── Native host check ───────────────────────────────────────────
+
+function setNativeStatus(state, text) {
+  nativeStatus.className = "status-bar " + state;
+  nativeStatusText.textContent = text;
+  nativeRecheckBtn.hidden = state === "checking";
+}
+
+function checkNativeHost() {
+  setNativeStatus("checking", "Checking native host\u2026");
+  chrome.runtime.sendMessage({ type: "PING_NATIVE" }, (response) => {
+    if (chrome.runtime.lastError) {
+      setNativeStatus("error", `Cannot reach background service worker \u2014 ${chrome.runtime.lastError.message}`);
+      return;
+    }
+    if (response && response.reachable) {
+      setNativeStatus("ok", "Native host connected.");
+    } else {
+      const detail = response?.error || "unknown error";
+      setNativeStatus("error", `Native host not found \u2014 ${detail}`);
+    }
+  });
+}
+
+nativeRecheckBtn.addEventListener("click", checkNativeHost);
+
 // ── Init ───────────────────────────────────────────────────────
 
 interceptAllCheckbox.addEventListener("change", toggleInterceptAll);
+debugCheckbox.addEventListener("change", toggleDebugMode);
 
 addBtn.addEventListener("click", addPattern);
 
@@ -203,7 +248,10 @@ patternInput.addEventListener("keydown", (e) => {
   }
 });
 
-Promise.all([loadInterceptAll(), loadPatterns()]).then(([allEnabled, patterns]) => {
+Promise.all([loadInterceptAll(), loadDebugMode(), loadPatterns()]).then(([allEnabled, debugEnabled, patterns]) => {
   applyInterceptAllState(allEnabled);
+  debugCheckbox.checked = debugEnabled;
   renderPatterns(patterns);
 });
+
+checkNativeHost();
