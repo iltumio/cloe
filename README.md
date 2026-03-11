@@ -101,7 +101,7 @@ If no patterns are configured and "Intercept all" is off, no links are intercept
 
 ## Notes
 
-- This intercepts normal left-click HTTP(S) links in standalone PWA display mode.
+- This intercepts HTTP(S) links in standalone PWA display mode — both normal link clicks and programmatic navigations (`window.open`, `location.href`, `location.assign`, `location.replace`).
 - If native messaging fails, it falls back to in-app navigation.
 - Re-run the install script whenever the extension ID changes.
 

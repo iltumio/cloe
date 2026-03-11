@@ -1,9 +1,12 @@
 const STORAGE_KEY = "urlPatterns";
 const INTERCEPT_ALL_KEY = "interceptAll";
 const DEBUG_KEY = "debugMode";
+const MSG_PREFIX = "__cloe__";
 
 /** Compiled regex list. */
 let compiledPatterns = [];
+/** Raw pattern strings (forwarded to the MAIN world script). */
+let rawPatterns = [];
 /** When true, intercept every link regardless of patterns. */
 let interceptAll = false;
 /** When true, log every interception decision to the console. */
@@ -17,13 +20,27 @@ function debug(...args) {
   }
 }
 
+/** Push current settings to the MAIN world content script. */
+function pushSettingsToMainWorld() {
+  window.postMessage(
+    {
+      type: MSG_PREFIX + "settings",
+      patterns: rawPatterns,
+      interceptAll,
+      debugMode,
+    },
+    "*"
+  );
+}
+
 function loadSettings() {
   chrome.storage.sync.get(
     { [STORAGE_KEY]: [], [INTERCEPT_ALL_KEY]: false, [DEBUG_KEY]: false },
     (data) => {
       interceptAll = data[INTERCEPT_ALL_KEY] === true;
       debugMode = data[DEBUG_KEY] === true;
-      compiledPatterns = data[STORAGE_KEY]
+      rawPatterns = data[STORAGE_KEY] || [];
+      compiledPatterns = rawPatterns
         .map((p) => {
           try { return new RegExp(p); }
           catch (_) { return null; }
@@ -33,13 +50,15 @@ function loadSettings() {
       debug("Settings loaded", {
         interceptAll,
         debugMode,
-        patterns: data[STORAGE_KEY],
+        patterns: rawPatterns,
       });
       debug("Display mode:", {
         standalone: window.matchMedia("(display-mode: standalone)").matches,
         windowControlsOverlay: window.matchMedia("(display-mode: window-controls-overlay)").matches,
         current: isStandaloneDisplayMode() ? "standalone" : "browser tab",
       });
+
+      pushSettingsToMainWorld();
     }
   );
 }
@@ -64,12 +83,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadSettings();
 
-// ── Existing logic ─────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────
 
 function isStandaloneDisplayMode() {
   return window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: window-controls-overlay)").matches;
 }
-
 
 function hasModifierKey(event) {
   return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
@@ -91,6 +109,21 @@ function extractHttpUrl(anchor) {
   }
 }
 
+/** Send a URL to the background for native-host opening. */
+function openExternally(url) {
+  chrome.runtime.sendMessage({ type: "OPEN_EXTERNAL", url }, (response) => {
+    if (chrome.runtime.lastError || !response || response.ok !== true) {
+      const error = chrome.runtime.lastError?.message || response?.error || "unknown";
+      debug("Native messaging failed, falling back to in-app navigation:", error);
+      window.location.assign(url);
+    } else {
+      debug("Native host opened URL successfully");
+    }
+  });
+}
+
+// ── Click handler (existing — handles <a> tags) ────────────────
+
 function maybeOpenExternally(event) {
   if (!isStandaloneDisplayMode()) {
     debug("Skip: not in standalone display mode");
@@ -109,7 +142,6 @@ function maybeOpenExternally(event) {
 
   const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
   if (!anchor) {
-    debug("Skip: click target is not inside an <a> element");
     return;
   }
 
@@ -133,15 +165,20 @@ function maybeOpenExternally(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  chrome.runtime.sendMessage({ type: "OPEN_EXTERNAL", url: href }, (response) => {
-    if (chrome.runtime.lastError || !response || response.ok !== true) {
-      const error = chrome.runtime.lastError?.message || response?.error || "unknown";
-      debug("Native messaging failed, falling back to in-app navigation:", error);
-      window.location.assign(href);
-    } else {
-      debug("Native host opened URL successfully");
-    }
-  });
+  openExternally(href);
 }
 
 document.addEventListener("click", maybeOpenExternally, true);
+
+// ── Bridge: receive intercept requests from MAIN world ─────────
+
+window.addEventListener("message", (e) => {
+  if (e.source !== window) return;
+  if (!e.data || e.data.type !== MSG_PREFIX + "open_external") return;
+
+  const url = e.data.url;
+  if (typeof url !== "string" || url.length === 0) return;
+
+  debug("Received open-external from MAIN world:", url);
+  openExternally(url);
+});
