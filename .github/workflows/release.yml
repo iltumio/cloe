@@ -62,15 +62,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Zip extension
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test extension and installers
         run: |
-          cd extension
-          zip -r ../cloe-extension.zip .
+          node --test tests/*.test.cjs
+          python3 tests/installers.py
+          python3 tests/native-host.py
+
+      - name: Package extensions
+        run: python3 scripts/package-extension.py
+
+      - name: Validate Firefox extension
+        run: npx --yes web-ext@10.8.0 lint --source-dir dist/cloe-extension-firefox --warnings-as-errors
 
       - uses: actions/upload-artifact@v4
         with:
           name: cloe-extension
-          path: cloe-extension.zip
+          path: dist/*.zip
 
   release:
     needs: [build-host, package-extension]
@@ -93,3 +104,4 @@ jobs:
             artifacts/cloe-host-macos-x86_64/cloe-host-macos-x86_64
             artifacts/cloe-host-macos-aarch64/cloe-host-macos-aarch64
             artifacts/cloe-extension/cloe-extension.zip
+            artifacts/cloe-extension/cloe-extension-firefox.zip

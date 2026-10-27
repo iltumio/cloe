@@ -292,3 +292,23 @@ h1 {
 .recheck-btn:hover {
   opacity: 1;
 }
+
+.container { max-width: 760px; }
+.destination-editor { margin-top: 14px; }
+.destination-editor label { display: block; font-size: .85rem; margin: 12px 0 5px; }
+.destination-editor input, .destination-editor select, .destination-editor textarea {
+  width: 100%; padding: 8px 12px; border: 1px solid #d0d0d0; border-radius: 6px;
+  font: inherit; font-size: .875rem; background: #fff;
+}
+.destination-editor textarea, #deep-link-template, #command-program { font-family: monospace; }
+.help { color: #666; font-size: .8rem; margin-top: 8px; }
+.command-presets, .rule-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.command-presets { margin-top: 8px; }
+.command-presets button, #cancel-edit { padding: 5px 8px; cursor: pointer; }
+#cancel-edit { margin-top: 10px; }
+#pattern-list li { align-items: flex-start; gap: 8px; }
+#pattern-list li button:disabled { opacity: .4; cursor: default; }
+@media (max-width: 600px) {
+  .container { margin: 16px; padding: 20px; }
+  #pattern-list li { flex-direction: column; }
+}

@@ -1,9 +1,17 @@
 const STORAGE_KEY = "urlPatterns";
 const INTERCEPT_ALL_KEY = "interceptAll";
 const DEBUG_KEY = "debugMode";
+const BROWSER_TABS_KEY = "interceptBrowserTabs";
+const DEFAULT_BROWSER_TABS = chrome.runtime.getURL("").startsWith("moz-extension://");
+let editingIndex = null;
+const destinationType = document.getElementById("destination-type");
+const deepLinkTemplate = document.getElementById("deep-link-template");
+const commandProgram = document.getElementById("command-program");
+const commandArgs = document.getElementById("command-args");
+const cancelEdit = document.getElementById("cancel-edit");
+const browserTabsCheckbox = document.getElementById("intercept-browser-tabs");
 
 const interceptAllCheckbox = document.getElementById("intercept-all");
-const patternsSection = document.getElementById("patterns-section");
 const patternInput = document.getElementById("new-pattern");
 const addBtn = document.getElementById("add-btn");
 const inputError = document.getElementById("input-error");
@@ -53,7 +61,7 @@ function clearError() {
 
 async function loadPatterns() {
   const data = await chrome.storage.sync.get({ [STORAGE_KEY]: [] });
-  return data[STORAGE_KEY];
+  return CloeRules.normalizeRules(data[STORAGE_KEY]);
 }
 
 async function savePatterns(patterns) {
@@ -82,20 +90,6 @@ async function saveDebugMode(value) {
 
 function applyInterceptAllState(enabled) {
   interceptAllCheckbox.checked = enabled;
-
-  if (enabled) {
-    patternsSection.classList.add("disabled");
-    patternInput.disabled = true;
-    addBtn.disabled = true;
-    presetSelect.disabled = true;
-    presetAddBtn.disabled = true;
-  } else {
-    patternsSection.classList.remove("disabled");
-    patternInput.disabled = false;
-    addBtn.disabled = false;
-    presetSelect.disabled = false;
-    presetAddBtn.disabled = !presetSelect.value;
-  }
 }
 
 async function toggleInterceptAll() {
@@ -118,7 +112,7 @@ function renderPresets(patterns) {
   placeholder.textContent = "Quick add a preset\u2026";
   presetSelect.appendChild(placeholder);
 
-  const available = PRESETS.filter((p) => !patterns.includes(p.pattern));
+  const available = PRESETS.filter((p) => !patterns.some(rule => rule.pattern === p.pattern));
 
   available.forEach((preset) => {
     const opt = document.createElement("option");
@@ -136,20 +130,33 @@ function renderPatterns(patterns) {
   patternList.innerHTML = "";
   emptyState.hidden = patterns.length > 0;
 
-  patterns.forEach((pattern, index) => {
+  patterns.forEach((rule, index) => {
     const li = document.createElement("li");
-
     const span = document.createElement("span");
     span.className = "pattern-text";
-    span.textContent = pattern;
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.textContent = "Remove";
-    removeBtn.addEventListener("click", () => removePattern(index));
-
+    const action = rule.action;
+    const description = action.type === "deep_link" ? action.template
+      : action.type === "command" ? `${action.program} ${(action.args || []).map(arg => JSON.stringify(arg)).join(" ")}`
+      : "Default browser";
+    span.textContent = `${rule.pattern} → ${description}`;
     li.appendChild(span);
-    li.appendChild(removeBtn);
+    const controls = document.createElement("div");
+    controls.className = "rule-controls";
+    for (const [label, handler, disabled] of [
+      ["Edit", () => editRule(rule, index), false],
+      ["↑", () => moveRule(index, -1), index === 0],
+      ["↓", () => moveRule(index, 1), index === patterns.length - 1],
+      ["Remove", () => removePattern(index), false],
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.disabled = disabled;
+      button.setAttribute("aria-label", `${label} rule ${index + 1}`);
+      button.addEventListener("click", handler);
+      controls.appendChild(button);
+    }
+    li.appendChild(controls);
     patternList.appendChild(li);
   });
 
@@ -158,49 +165,107 @@ function renderPatterns(patterns) {
 
 // ── Actions ────────────────────────────────────────────────────
 
-async function addPatternRaw(raw) {
-  clearError();
-
-  if (!raw) {
-    showError("Pattern cannot be empty.");
-    return;
-  }
-
-  if (!isValidRegex(raw)) {
-    showError("Invalid regular expression.");
-    return;
-  }
-
-  const patterns = await loadPatterns();
-
-  if (patterns.includes(raw)) {
-    showError("This pattern already exists.");
-    return;
-  }
-
-  patterns.push(raw);
-  await savePatterns(patterns);
-  renderPatterns(patterns);
+function updateDestinationFields() {
+  document.getElementById("deep-link-fields").hidden = destinationType.value !== "deep_link";
+  document.getElementById("command-fields").hidden = destinationType.value !== "command";
+  document.getElementById("template-help").hidden = destinationType.value === "default";
 }
 
-async function addPattern() {
-  const raw = patternInput.value.trim();
-  await addPatternRaw(raw);
+function readAction() {
+  if (destinationType.value === "deep_link") return { type: "deep_link", template: deepLinkTemplate.value.trim() };
+  if (destinationType.value === "command") return {
+    type: "command", program: commandProgram.value.trim(),
+    args: commandArgs.value === "" ? [] : commandArgs.value.split("\n"),
+  };
+  return { type: "default" };
+}
+
+function resetEditor() {
+  editingIndex = null;
   patternInput.value = "";
+  destinationType.value = "default";
+  deepLinkTemplate.value = "";
+  commandProgram.value = "";
+  commandArgs.value = "";
+  addBtn.textContent = "Add";
+  cancelEdit.hidden = true;
+  clearError();
+  updateDestinationFields();
+}
+
+function editRule(rule, index) {
+  editingIndex = index;
+  patternInput.value = rule.pattern;
+  destinationType.value = rule.action.type;
+  deepLinkTemplate.value = rule.action.template || "";
+  commandProgram.value = rule.action.program || "";
+  commandArgs.value = (rule.action.args || []).join("\n");
+  addBtn.textContent = "Save";
+  cancelEdit.hidden = false;
+  updateDestinationFields();
   patternInput.focus();
 }
 
+async function addPatternRaw(raw) {
+  clearError();
+  try {
+    if (!raw) throw new Error("Pattern cannot be empty.");
+    if (!isValidRegex(raw)) throw new Error("Invalid regular expression.");
+    const action = readAction();
+    CloeRules.validateAction(action);
+    const patterns = await loadPatterns();
+    if (patterns.some((rule, index) => rule.pattern === raw && index !== editingIndex)) {
+      throw new Error("This pattern already exists. Edit that rule instead.");
+    }
+    const rule = { pattern: raw, action };
+    if (editingIndex === null) patterns.push(rule);
+    else patterns[editingIndex] = rule;
+    await savePatterns(patterns);
+    resetEditor();
+    renderPatterns(patterns);
+    return true;
+  } catch (error) {
+    showError(error.message);
+    return false;
+  }
+}
+
+async function addPattern() {
+  if (await addPatternRaw(patternInput.value.trim())) patternInput.focus();
+}
+
 async function addPreset() {
-  const value = presetSelect.value;
-  if (!value) return;
-  await addPatternRaw(value);
+  if (presetSelect.value) await addPatternRaw(presetSelect.value);
 }
 
 async function removePattern(index) {
   const patterns = await loadPatterns();
   patterns.splice(index, 1);
   await savePatterns(patterns);
+  resetEditor();
   renderPatterns(patterns);
+}
+
+async function moveRule(index, direction) {
+  const patterns = await loadPatterns();
+  const next = index + direction;
+  if (next < 0 || next >= patterns.length) return;
+  [patterns[index], patterns[next]] = [patterns[next], patterns[index]];
+  await savePatterns(patterns);
+  resetEditor();
+  renderPatterns(patterns);
+}
+
+destinationType.addEventListener("change", updateDestinationFields);
+cancelEdit.addEventListener("click", resetEditor);
+for (const [id, args] of [
+  ["omarchy-open", ["launch", "webapp", "{url}"]],
+  ["omarchy-focus", ["launch", "or", "focus", "webapp", "Linear", "{url}"]],
+]) {
+  document.getElementById(id).addEventListener("click", () => {
+    commandProgram.value = "omarchy";
+    commandArgs.value = args.join("\n");
+  });
 }
 
 // ── Native host check ───────────────────────────────────────────
@@ -215,7 +280,7 @@ function checkNativeHost() {
   setNativeStatus("checking", "Checking native host\u2026");
   chrome.runtime.sendMessage({ type: "PING_NATIVE" }, (response) => {
     if (chrome.runtime.lastError) {
-      setNativeStatus("error", `Cannot reach background service worker \u2014 ${chrome.runtime.lastError.message}`);
+      setNativeStatus("error", `Cannot reach extension background \u2014 ${chrome.runtime.lastError.message}`);
       return;
     }
     if (response && response.reachable) {
@@ -255,3 +320,10 @@ Promise.all([loadInterceptAll(), loadDebugMode(), loadPatterns()]).then(([allEna
 });
 
 checkNativeHost();
+
+chrome.storage.sync.get({ [BROWSER_TABS_KEY]: DEFAULT_BROWSER_TABS }).then((data) => {
+  browserTabsCheckbox.checked = data[BROWSER_TABS_KEY] === true;
+});
+browserTabsCheckbox.addEventListener("change", () => {
+  chrome.storage.sync.set({ [BROWSER_TABS_KEY]: browserTabsCheckbox.checked });
+});

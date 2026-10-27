@@ -6,6 +6,22 @@ use url::Url;
 #[derive(Debug, Deserialize)]
 struct Request {
     url: String,
+    #[serde(default)]
+    action: Action,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Action {
+    #[default]
+    Default,
+    DeepLink {
+        url: String,
+    },
+    Command {
+        program: String,
+        args: Vec<String>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -45,14 +61,60 @@ fn validate_url(raw: &str) -> Result<Url, String> {
     }
 }
 
-fn open_in_default_browser(url: &str) -> Result<(), String> {
-    Command::new("xdg-open")
-        .arg(url)
+fn open_url(url: &str) -> Result<(), String> {
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    spawn_command(opener, &[url.to_owned()])
+}
+
+fn spawn_command(program: &str, args: &[String]) -> Result<(), String> {
+    if program.trim().is_empty() || program.contains(['\0', '\n', '\r']) {
+        return Err("Invalid executable name".to_owned());
+    }
+    if args.iter().any(|arg| arg.contains('\0')) {
+        return Err("Arguments cannot contain NUL characters".to_owned());
+    }
+    // No shell evaluation: each configured argument stays a single argument,
+    // even when the URL contains spaces, quotes or shell metacharacters.
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("Failed to spawn xdg-open: {e}"))
+        .map_err(|e| format!("Failed to spawn {program}: {e}"))
+}
+
+fn execute_action(source: &Url, action: &Action) -> Result<(), String> {
+    match action {
+        Action::Default => open_url(source.as_str()),
+        Action::DeepLink { url } => {
+            let target = Url::parse(url).map_err(|e| format!("Invalid deep link: {e}"))?;
+            if matches!(
+                target.scheme(),
+                "http"
+                    | "https"
+                    | "file"
+                    | "data"
+                    | "javascript"
+                    | "vbscript"
+                    | "about"
+                    | "chrome"
+                    | "resource"
+                    | "moz-extension"
+                    | "chrome-extension"
+                    | "cloe"
+            ) {
+                return Err("Deep links must use an application protocol".to_owned());
+            }
+            open_url(target.as_str())
+        }
+        Action::Command { program, args } => spawn_command(program, args),
+    }
 }
 
 fn handle(raw_message: &[u8]) -> Response {
@@ -76,7 +138,7 @@ fn handle(raw_message: &[u8]) -> Response {
         }
     };
 
-    match open_in_default_browser(parsed.as_str()) {
+    match execute_action(&parsed, &request.action) {
         Ok(()) => Response {
             ok: true,
             error: None,

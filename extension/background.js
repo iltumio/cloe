@@ -1,3 +1,6 @@
+// Firefox loads rules.js before this event page; Chromium uses a service worker.
+if (typeof importScripts === "function") importScripts("rules.js");
+
 const NATIVE_HOST = "com.iltumio.cloe";
 const DEBUG_KEY = "debugMode";
 
@@ -25,12 +28,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadDebugSetting();
 
-function sendNative(url) {
+async function sendNative(url) {
+  // Resolve from extension storage only. Never trust an action supplied by a page.
+  const settings = await chrome.storage.sync.get({ urlPatterns: [], interceptAll: false });
+  const action = CloeRules.selectAction(settings.urlPatterns, url, settings.interceptAll === true);
   debug("Sending to native host:", url);
   return new Promise((resolve) => {
     chrome.runtime.sendNativeMessage(
       NATIVE_HOST,
-      { url },
+      { url, action },
       (response) => {
         const runtimeError = chrome.runtime.lastError;
         if (runtimeError) {

@@ -9,7 +9,7 @@
   <div class="container">
     <h1>CLOE</h1>
     <p class="description">
-      Configure which links should open in your default browser.
+      Route matching links to your browser, an app deep link, or a custom command.
     </p>
 
     <div id="native-status" class="status-bar checking">
@@ -17,6 +17,11 @@
       <span id="native-status-text">Checking native host…</span>
       <button id="native-recheck" type="button" class="recheck-btn" hidden>Re-check</button>
     </div>
+
+    <label class="toggle-row">
+      <input id="intercept-browser-tabs" type="checkbox">
+      <span>Intercept links in browser tabs too</span>
+    </label>
 
     <label class="toggle-row" id="intercept-all-row">
       <input id="intercept-all" type="checkbox">
@@ -27,7 +32,7 @@
 
 
     <div id="patterns-section">
-      <p class="section-label">URL patterns (regex) to open in the default browser:</p>
+      <p class="section-label">Routing rules — the first matching rule wins. Unmatched links use the default browser only when “Intercept all links” is on.</p>
 
       <div class="preset-row">
         <select id="preset-select">
@@ -46,6 +51,32 @@
         >
         <button id="add-btn" type="button">Add</button>
       </div>
+      <div class="destination-editor">
+        <label for="destination-type">Open with</label>
+        <select id="destination-type">
+          <option value="default">Default browser</option>
+          <option value="deep_link">Application deep link</option>
+          <option value="command">Custom command</option>
+        </select>
+        <div id="deep-link-fields" hidden>
+          <label for="deep-link-template">Deep link template</label>
+          <input id="deep-link-template" type="text" spellcheck="false"
+            placeholder="linear://{host}{path}{query}{hash}">
+        </div>
+        <div id="command-fields" hidden>
+          <label for="command-program">Executable name or absolute path</label>
+          <input id="command-program" type="text" spellcheck="false" placeholder="omarchy">
+          <label for="command-args">Arguments — one argument per line, without surrounding quotes</label>
+          <textarea id="command-args" rows="5" spellcheck="false" placeholder="launch&#10;webapp&#10;{url}"></textarea>
+          <div class="command-presets">
+            <button id="omarchy-open" type="button">Omarchy: open webapp</button>
+            <button id="omarchy-focus" type="button">Omarchy: launch or focus</button>
+          </div>
+          <p class="help">Launch or focus uses a window pattern (replace “Linear” with your app). An existing window is focused; its current page is kept. For pipes or shell logic, use your own script as the executable.</p>
+        </div>
+        <p id="template-help" class="help" hidden>Templates: {url}, {encodedUrl}, {host}, {path}, {query}, {hash}, and regex captures {1}, {2}, … . Path starts with /; query includes ? and hash includes #.</p>
+        <button id="cancel-edit" type="button" hidden>Cancel edit</button>
+      </div>
       <p id="input-error" class="error" hidden></p>
 
       <ul id="pattern-list"></ul>
@@ -63,6 +94,7 @@
     </label>
   </div>
 
+  <script src="rules.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

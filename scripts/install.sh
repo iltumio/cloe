@@ -2,10 +2,11 @@
 #
 # CLOE — Install script
 # Downloads the pre-built native host binary from GitHub Releases
-# and registers it as a Chromium native messaging host.
+# and registers it as a Chromium or Firefox native messaging host.
 #
-# Usage: ./install.sh <extension_id> [version]
+# Usage: ./install.sh <extension_id|firefox> [version]
 #   extension_id  — your CLOE extension ID from chrome://extensions
+#   firefox       — install for Firefox using the fixed CLOE add-on ID
 #   version       — optional tag (default: latest)
 
 set -euo pipefail
@@ -17,13 +18,21 @@ BIN_NAME="cloe-host"
 # ── Args ────────────────────────────────────────────────────────
 
 if [[ "${1:-}" == "" ]]; then
-  printf "Usage: %s <extension_id> [version]\n" "$0"
-  printf "Example: %s abcdefghijklmnopqrstuvwxyzabcdef\n" "$0"
-  printf "Example: %s abcdefghijklmnopqrstuvwxyzabcdef v0.1.0\n" "$0"
+  printf "Usage: %s <extension_id|firefox> [version]\n" "$0"
+  printf "Example: %s abcdefghijklmnopabcdefghijklmnop\n" "$0"
+  printf "Example: %s abcdefghijklmnopabcdefghijklmnop v0.1.0\n" "$0"
   exit 1
 fi
 
 EXTENSION_ID="$1"
+BROWSER="chromium"
+if [[ "$EXTENSION_ID" == "firefox" ]]; then
+  BROWSER="firefox"
+  EXTENSION_ID="cloe@iltumio.dev"
+elif [[ ! "$EXTENSION_ID" =~ ^[a-p]{32}$ ]]; then
+  printf "Expected a Chromium extension ID (32 letters a-p), or firefox.\n" >&2
+  exit 1
+fi
 VERSION="${2:-latest}"
 
 # ── Detect platform ─────────────────────────────────────────────
@@ -83,20 +92,37 @@ case "$PLATFORM" in
     ;;
 esac
 
+if [[ "$BROWSER" == "firefox" ]]; then
+  case "$PLATFORM" in
+    linux) NMH_DIR="$HOME/.mozilla/native-messaging-hosts" ;;
+    macos) NMH_DIR="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts" ;;
+  esac
+fi
+
 mkdir -p "$NMH_DIR"
+
+ALLOW_KEY="allowed_origins"
+ALLOW_VALUE="chrome-extension://$EXTENSION_ID/"
+if [[ "$BROWSER" == "firefox" ]]; then
+  ALLOW_KEY="allowed_extensions"
+  ALLOW_VALUE="$EXTENSION_ID"
+fi
+# Escape path characters for JSON (HOME may contain spaces, quotes or backslashes).
+JSON_DEST="${DEST//\\/\\\\}"
+JSON_DEST="${JSON_DEST//\"/\\\"}"
 
 cat > "$NMH_DIR/$HOST_NAME.json" <<EOF
 {
   "name": "$HOST_NAME",
   "description": "CLOE — Open links in external default browser",
-  "path": "$DEST",
+  "path": "$JSON_DEST",
   "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://$EXTENSION_ID/"
+  "$ALLOW_KEY": [
+    "$ALLOW_VALUE"
   ]
 }
 EOF
 
 printf "Registered native messaging host at:\n"
 printf "  %s/%s.json\n" "$NMH_DIR" "$HOST_NAME"
-printf "\nDone! Restart Chromium and relaunch your PWA windows.\n"
+printf "\nDone! Restart $BROWSER and reload the extension if it was loaded temporarily.\n"

@@ -1,6 +1,9 @@
 const STORAGE_KEY = "urlPatterns";
 const INTERCEPT_ALL_KEY = "interceptAll";
 const DEBUG_KEY = "debugMode";
+const BROWSER_TABS_KEY = "interceptBrowserTabs";
+const DEFAULT_BROWSER_TABS = chrome.runtime.getURL("").startsWith("moz-extension://");
+let interceptBrowserTabs = DEFAULT_BROWSER_TABS;
 const MSG_PREFIX = "__cloe__";
 
 /** Compiled regex list. */
@@ -27,6 +30,7 @@ function pushSettingsToMainWorld() {
       type: MSG_PREFIX + "settings",
       patterns: rawPatterns,
       interceptAll,
+      interceptBrowserTabs,
       debugMode,
     },
     "*"
@@ -35,11 +39,12 @@ function pushSettingsToMainWorld() {
 
 function loadSettings() {
   chrome.storage.sync.get(
-    { [STORAGE_KEY]: [], [INTERCEPT_ALL_KEY]: false, [DEBUG_KEY]: false },
+    { [STORAGE_KEY]: [], [INTERCEPT_ALL_KEY]: false, [DEBUG_KEY]: false, [BROWSER_TABS_KEY]: DEFAULT_BROWSER_TABS },
     (data) => {
       interceptAll = data[INTERCEPT_ALL_KEY] === true;
+      interceptBrowserTabs = data[BROWSER_TABS_KEY] === true;
       debugMode = data[DEBUG_KEY] === true;
-      rawPatterns = data[STORAGE_KEY] || [];
+      rawPatterns = CloeRules.normalizeRules(data[STORAGE_KEY]).map(rule => rule.pattern);
       compiledPatterns = rawPatterns
         .map((p) => {
           try { return new RegExp(p); }
@@ -76,7 +81,7 @@ function shouldIntercept(url) {
 
 // Reload settings whenever storage changes.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && (changes[STORAGE_KEY] || changes[INTERCEPT_ALL_KEY] || changes[DEBUG_KEY])) {
+  if (area === "sync" && (changes[STORAGE_KEY] || changes[INTERCEPT_ALL_KEY] || changes[DEBUG_KEY] || changes[BROWSER_TABS_KEY])) {
     loadSettings();
   }
 });
@@ -125,7 +130,7 @@ function openExternally(url) {
 // ── Click handler (existing — handles <a> tags) ────────────────
 
 function maybeOpenExternally(event) {
-  if (!isStandaloneDisplayMode()) {
+  if (!interceptBrowserTabs && !isStandaloneDisplayMode()) {
     debug("Skip: not in standalone display mode");
     return;
   }
@@ -174,10 +179,19 @@ document.addEventListener("click", maybeOpenExternally, true);
 
 window.addEventListener("message", (e) => {
   if (e.source !== window) return;
-  if (!e.data || e.data.type !== MSG_PREFIX + "open_external") return;
+  if (!e.data) return;
+  if (e.data.type === MSG_PREFIX + "ready") {
+    pushSettingsToMainWorld();
+    return;
+  }
+  if (e.data.type !== MSG_PREFIX + "open_external") return;
 
   const url = e.data.url;
   if (typeof url !== "string" || url.length === 0) return;
+
+  if (!interceptBrowserTabs && !isStandaloneDisplayMode()) return;
+  const resolved = extractHttpUrl({ href: url });
+  if (!resolved || !shouldIntercept(resolved)) return;
 
   debug("Received open-external from MAIN world:", url);
   openExternally(url);

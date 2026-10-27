@@ -16,6 +16,7 @@
 
   let compiledPatterns = [];
   let interceptAll = false;
+  let interceptBrowserTabs = false;
   let debugMode = false;
 
   function debug(...args) {
@@ -53,7 +54,7 @@
    * Returns the resolved URL if interception should occur, or null.
    */
   function tryIntercept(rawUrl) {
-    if (!isStandaloneDisplayMode()) return null;
+    if (!interceptBrowserTabs && !isStandaloneDisplayMode()) return null;
     const resolved = resolveUrl(rawUrl);
     if (!resolved) return null;
     if (!shouldIntercept(resolved)) return null;
@@ -73,6 +74,7 @@
     if (!e.data || e.data.type !== MSG_PREFIX + "settings") return;
 
     interceptAll = e.data.interceptAll === true;
+    interceptBrowserTabs = e.data.interceptBrowserTabs === true;
     debugMode = e.data.debugMode === true;
     compiledPatterns = (e.data.patterns || [])
       .map((p) => {
@@ -154,5 +156,6 @@
     });
   }
 
+  window.postMessage({ type: MSG_PREFIX + "ready" }, "*");
   debug("MAIN world interceptors installed");
 })();
